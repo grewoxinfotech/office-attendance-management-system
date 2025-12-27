@@ -3,9 +3,9 @@ const auth = require('../middleware/auth.middleware');
 const ctrl = require('../controllers/attendance.controller');
 
 // Employee
-router.post('/in', auth, ctrl.checkIn);
-router.post('/out', auth, ctrl.checkOut);
-router.get('/me', auth, ctrl.getMyAttendance);
+router.post('/check-in', auth, ctrl.checkIn);
+router.post('/check-out', auth, ctrl.checkOut);
+router.get('/my', auth, ctrl.getMyAttendance);
 
 // Admin
 router.get('/list', auth, ctrl.getAllAttendance);

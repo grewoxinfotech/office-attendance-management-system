@@ -1,7 +1,7 @@
 const Attendance = require('../models/attendance.model');
 const db = require('../config/db');
 
-// Employee check-in
+/* ===================== EMPLOYEE CHECK-IN ===================== */
 const checkIn = (req, res) => {
     const userId = req.user?.id;
     if (!userId) return res.status(400).json({ msg: 'User not found' });
@@ -9,112 +9,96 @@ const checkIn = (req, res) => {
     const now = new Date();
     const location = req.body?.location || 'Office';
 
-    // Shift rules
     const shiftStart = new Date();
-    shiftStart.setHours(9, 0, 0, 0);          // 9:00 AM
-    const lateThreshold = new Date(shiftStart.getTime() + 10 * 60000); // 9:10 AM
+    shiftStart.setHours(9, 0, 0, 0);
+    const lateThreshold = new Date(shiftStart.getTime() + 10 * 60000);
 
     const status = now > lateThreshold ? 'late' : 'present';
 
     Attendance.markIn(userId, now, location, (err) => {
-        if (err) {
-            return res.status(500).json({
-                msg: 'Check-in failed',
-                error: err.message
-            });
-        }
-
-        res.status(200).json({
-            msg: 'Checked In Successfully',
-            check_in_time: now,
-            shift_start: shiftStart,
-            status,
-            location
-        });
-    });
-};
-
-// Employee check-out
-const checkOut = (req, res) => {
-    const userId = req.user?.id;
-    if (!userId) return res.status(400).json({ msg: 'User not found' });
-
-    const now = new Date();
-
-    // Shift timings
-    const shiftStart = new Date();
-    shiftStart.setHours(9, 0, 0, 0);
-
-    const shiftEnd = new Date();
-    shiftEnd.setHours(18, 30, 0, 0); // 6:30 PM
-
-    // Fetch today's attendance
-    const sql = `
-        SELECT * FROM attendance
-        WHERE user_id = ? AND date = CURDATE()
-        ORDER BY id DESC LIMIT 1
-    `;
-
-    db.query(sql, [userId], (err, rows) => {
-        if (err) return res.status(500).json({ msg: 'DB Error' });
-        if (!rows.length) return res.status(400).json({ msg: 'No check-in found today' });
-
-        const attendance = rows[0];
-        const inTime = new Date(attendance.in_time);
-
-        // Calculate hours worked
-        const hoursWorked = ((now - inTime) / (1000 * 60 * 60)).toFixed(2);
-
-        // Calculate overtime
-        let overtime = 0;
-        if (now > shiftEnd) {
-            overtime = ((now - shiftEnd) / (1000 * 60 * 60)).toFixed(2);
-        }
-
-        // Status
-        const lateThreshold = new Date(shiftStart.getTime() + 10 * 60000);
-        const status = inTime > lateThreshold ? 'late' : 'present';
-
-        // Update record
-        const updateSQL = `
-            UPDATE attendance
-            SET out_time = ?, hours_worked = ?, overtime = ?, status = ?
-            WHERE id = ?
-        `;
+        if (err)
+            return res.status(500).json({ msg: 'Check-in failed', error: err.message });
 
         db.query(
-            updateSQL,
-            [now, hoursWorked, overtime, status, attendance.id],
-            (err) => {
-                if (err) return res.status(500).json({ msg: 'Check-out failed' });
+            `SELECT * FROM attendance 
+             WHERE user_id = ? AND date = CURDATE()
+             ORDER BY id DESC LIMIT 1`,
+            [userId],
+            (err, rows) => {
+                if (err) return res.status(500).json({ msg: 'DB Error' });
 
-                res.status(200).json({
-                    msg: 'Checked Out Successfully',
-                    check_in_time: inTime,
-                    check_out_time: now,
-                    hours_worked: hoursWorked,
-                    overtime,
-                    status
+                res.json({
+                    msg: 'Checked In Successfully',
+                    data: rows[0]
                 });
             }
         );
     });
 };
 
+/* ===================== EMPLOYEE CHECK-OUT ===================== */
+const checkOut = (req, res) => {
+    const userId = req.user?.id;
+    if (!userId) return res.status(400).json({ msg: 'User not found' });
 
-// Admin: Get all attendance
+    const now = new Date();
+
+    db.query(
+        `SELECT * FROM attendance 
+         WHERE user_id = ? AND date = CURDATE()
+         ORDER BY id DESC LIMIT 1`,
+        [userId],
+        (err, rows) => {
+            if (err) return res.status(500).json({ msg: 'DB Error' });
+            if (!rows.length) return res.status(400).json({ msg: 'No check-in found today' });
+
+            const attendanceId = rows[0].id;
+
+            db.query(
+                `UPDATE attendance
+                 SET 
+                    out_time = ?,
+                    hours_worked = ROUND(TIMESTAMPDIFF(MINUTE, in_time, ?) / 60, 2),
+                    overtime = GREATEST(
+                        ROUND(TIMESTAMPDIFF(MINUTE, '18:30:00', ?) / 60, 2),
+                        0
+                    )
+                 WHERE id = ?`,
+                [now, now, now, attendanceId],
+                (err) => {
+                    if (err) return res.status(500).json({ msg: 'Check-out failed' });
+
+                    db.query(
+                        'SELECT * FROM attendance WHERE id = ?',
+                        [attendanceId],
+                        (err, rows) => {
+                            if (err) return res.status(500).json({ msg: 'DB Error' });
+
+                            res.json({
+                                msg: 'Checked Out Successfully',
+                                data: rows[0]
+                            });
+                        }
+                    );
+                }
+            );
+        }
+    );
+};
+
+/* ===================== ADMIN: GET ALL ATTENDANCE (DAY-WISE) ===================== */
 const getAllAttendance = (req, res) => {
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({
-            success: false,
-            msg: 'Access denied'
-        });
-    }
+    if (req.user.role !== 'admin')
+        return res.status(403).json({ msg: 'Access denied' });
 
-    const sql = `
+    const month = req.query.month || new Date().toISOString().slice(0, 7);
+    const userId = req.query.user_id || req.query.user_Id || null;
+
+    console.log('Admin GET Attendance params:', { month, userId }); // DEBUG
+
+    let sql = `
         SELECT 
-            a.id,
-            a.user_id,
+            u.id AS user_id,
             u.name,
             u.email,
             u.role,
@@ -128,55 +112,108 @@ const getAllAttendance = (req, res) => {
             a.notes
         FROM attendance a
         JOIN users u ON a.user_id = u.id
-        ORDER BY a.date DESC
+        WHERE DATE_FORMAT(a.date, '%Y-%m') = ?
     `;
 
-    db.query(sql, (err, results) => {
-        if (err) {
-            return res.status(500).json({
-                success: false,
-                msg: 'Failed to fetch attendance records',
-                error: err.message
-            });
-        }
+    const params = [month];
 
-        // ✅ No data case
-        if (!results || results.length === 0) {
-            return res.status(200).json({
-                success: true,
-                msg: 'No attendance records found',
-                total_records: 0,
-                data: []
-            });
+    if (userId) {
+        const uid = parseInt(userId);
+        if (!isNaN(uid)) {
+            sql += ' AND u.id = ?';
+            params.push(uid);
         }
+    }
 
-        // ✅ Success
-        return res.status(200).json({
-            success: true,
-            msg: 'Attendance records fetched successfully',
-            total_records: results.length,
-            data: results
+    sql += ' ORDER BY u.name ASC, a.date ASC';
+
+    db.query(sql, params, (err, rows) => {
+        if (err) return res.status(500).json({ msg: 'DB Error', error: err.message });
+
+        const grouped = {};
+        rows.forEach(row => {
+            if (!grouped[row.user_id]) {
+                grouped[row.user_id] = {
+                    user_id: row.user_id,
+                    name: row.name,
+                    email: row.email,
+                    role: row.role,
+                    attendance: []
+                };
+            }
+
+            grouped[row.user_id].attendance.push({
+                date: row.date,
+                in_time: row.in_time,
+                out_time: row.out_time,
+                hours_worked: Number(row.hours_worked || 0),
+                overtime: Number(row.overtime || 0),
+                status: row.status,
+                location: row.location,
+                notes: row.notes
+            });
+        });
+
+        res.status(200).json({
+            month,
+            total_users: Object.keys(grouped).length,
+            data: Object.values(grouped)
         });
     });
 };
 
 
-// Employee: Get my attendance
+
+/* ===================== EMPLOYEE: MY ATTENDANCE (DAY-WISE) ===================== */
 const getMyAttendance = (req, res) => {
     const userId = req.user?.id;
     if (!userId) return res.status(400).json({ msg: 'User not found' });
 
-    const sql = `
-        SELECT * FROM attendance WHERE user_id = ? ORDER BY date DESC
-    `;
-    db.query(sql, [userId], (err, results) => {
-        if (err) return res.status(500).json({ msg: 'DB Error', error: err.message });
-        res.json(results);
-    });
+    // optional query param: ?month=YYYY-MM
+    const month = req.query.month || new Date().toISOString().slice(0, 7);
+
+    db.query(
+        `SELECT 
+            date,
+            in_time,
+            out_time,
+            hours_worked,
+            overtime,
+            status,
+            location,
+            notes
+         FROM attendance
+         WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
+         ORDER BY date ASC`,
+        [userId, month],
+        (err, results) => {
+            if (err)
+                return res.status(500).json({ msg: 'DB Error', error: err.message });
+
+            // Map day-wise attendance
+            const attendance = results.map(row => ({
+                date: row.date,
+                in_time: row.in_time,
+                out_time: row.out_time,
+                hours_worked: Number(row.hours_worked || 0),
+                overtime: Number(row.overtime || 0),
+                status: row.status,
+                location: row.location,
+                notes: row.notes
+            }));
+
+            res.status(200).json({
+                month,
+                total_days: attendance.length,
+                data: attendance
+            });
+        }
+    );
 };
 
 
-// Admin: Update attendance
+
+/* ===================== ADMIN: UPDATE ATTENDANCE ===================== */
 const updateAttendance = (req, res) => {
     if (req.user.role !== 'admin')
         return res.status(403).json({ msg: 'Access denied' });
@@ -184,38 +221,68 @@ const updateAttendance = (req, res) => {
     const { id } = req.params;
     const { in_time, out_time, status, notes } = req.body;
 
-    const sql = `
-        UPDATE attendance
-        SET 
+    db.query(
+        `UPDATE attendance
+         SET 
             in_time = COALESCE(?, in_time),
             out_time = COALESCE(?, out_time),
             status = COALESCE(?, status),
-            notes = COALESCE(?, notes)
-        WHERE id = ?
-    `;
+            notes = COALESCE(?, notes),
+            hours_worked = ROUND(
+                TIMESTAMPDIFF(MINUTE, in_time, out_time) / 60, 2
+            )
+         WHERE id = ?`,
+        [in_time, out_time, status, notes, id],
+        (err, result) => {
+            if (err)
+                return res.status(500).json({ msg: 'Update failed', error: err.message });
 
-    db.query(sql, [in_time, out_time, status, notes, id], (err, result) => {
-        if (err) return res.status(500).json({ msg: 'Update failed', error: err.message });
-        if (!result.affectedRows) return res.status(404).json({ msg: 'Record not found' });
+            if (!result.affectedRows)
+                return res.status(404).json({ msg: 'Record not found' });
 
-        res.json({ msg: 'Attendance updated successfully' });
-    });
+            db.query(
+                'SELECT * FROM attendance WHERE id = ?',
+                [id],
+                (err, rows) => {
+                    if (err) return res.status(500).json({ msg: 'DB Error' });
+
+                    res.json({
+                        msg: 'Attendance updated successfully',
+                        data: rows[0]
+                    });
+                }
+            );
+        }
+    );
 };
 
-// Admin: Delete attendance
+/* ===================== ADMIN: DELETE ATTENDANCE ===================== */
 const deleteAttendance = (req, res) => {
     if (req.user.role !== 'admin')
         return res.status(403).json({ msg: 'Access denied' });
 
     const { id } = req.params;
 
-    db.query('DELETE FROM attendance WHERE id = ?', [id], (err, result) => {
-        if (err) return res.status(500).json({ msg: 'Delete failed', error: err.message });
-        if (!result.affectedRows) return res.status(404).json({ msg: 'Record not found' });
+    db.query(
+        'DELETE FROM attendance WHERE id = ?',
+        [id],
+        (err, result) => {
+            if (err)
+                return res.status(500).json({ msg: 'Delete failed', error: err.message });
 
-        res.json({ msg: 'Attendance deleted successfully' });
-    });
+            if (!result.affectedRows)
+                return res.status(404).json({ msg: 'Record not found' });
+
+            res.json({ msg: 'Attendance deleted successfully' });
+        }
+    );
 };
 
-
-module.exports = { checkIn, checkOut, getAllAttendance, getMyAttendance, updateAttendance, deleteAttendance };
+module.exports = {
+    checkIn,
+    checkOut,
+    getAllAttendance,
+    getMyAttendance,
+    updateAttendance,
+    deleteAttendance
+};

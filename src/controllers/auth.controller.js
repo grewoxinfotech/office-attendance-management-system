@@ -25,7 +25,13 @@ const login = (req, res) => {
 
             return res.json({
                 token,
-                user: { id: admin.id, name: admin.name, email: admin.email, role: 'admin' }
+                user: {
+                    id: admin.id,
+                    name: admin.name,
+                    email: admin.email,
+                    role: 'admin',
+                    created_at: admin.created_at
+                }
             });
         }
 
@@ -45,7 +51,14 @@ const login = (req, res) => {
 
             res.json({
                 token,
-                user: { id: user.id, name: user.name, email: user.email, role: 'employee', salary: user.salary }
+                user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    role: 'employee',
+                    salary: user.salary,
+                    created_at: user.created_at
+                }
             });
         });
     });
@@ -65,7 +78,15 @@ const register = (req, res) => {
         const hashed = bcrypt.hashSync(password, 10);
         User.createUser([name, email, hashed, salary || 0, 'employee'], err => {
             if (err) return res.status(500).json({ message: 'Create failed' });
-            res.status(201).json({ message: 'Employee created successfully' });
+
+            User.findByEmail(email, (err, rows) => {
+                if (err) return res.status(500).json({ message: 'DB error' });
+
+                res.status(201).json({
+                    message: 'Employee created successfully',
+                    data: rows[0]
+                });
+            });
         });
     });
 };
@@ -81,7 +102,15 @@ const registerAdmin = (req, res) => {
         const hashed = bcrypt.hashSync(password, 10);
         Admin.createAdmin([name, email, hashed], err => {
             if (err) return res.status(500).json({ message: 'Create failed' });
-            res.status(201).json({ message: 'Admin created successfully' });
+
+            Admin.findByEmail(email, (err, rows) => {
+                if (err) return res.status(500).json({ message: 'DB error' });
+
+                res.status(201).json({
+                    message: 'Admin created successfully',
+                    data: rows[0]
+                });
+            });
         });
     });
 };
@@ -93,7 +122,11 @@ const getAllUsers = (req, res) => {
 
     User.getAll((err, rows) => {
         if (err) return res.status(500).json({ message: 'DB error' });
-        res.json(rows);
+
+        res.json({
+            total_records: rows.length,
+            data: rows
+        });
     });
 };
 
@@ -102,7 +135,8 @@ const getUserById = (req, res) => {
     User.getById(req.params.id, (err, rows) => {
         if (err) return res.status(500).json({ message: 'DB error' });
         if (!rows.length) return res.status(404).json({ message: 'User not found' });
-        res.json(rows[0]);
+
+        res.json({ data: rows[0] });
     });
 };
 
@@ -111,26 +145,31 @@ const updateUser = (req, res) => {
     const { name, email, salary } = req.body;
 
     User.update(req.params.id, [name, email, salary], (err, result) => {
-        if (err) return res.status(500).json({ message: 'Update failed', error: err.message });
+        if (err)
+            return res.status(500).json({ message: 'Update failed', error: err.message });
 
-        if (!result.affectedRows) {
+        if (!result.affectedRows)
             return res.status(404).json({ message: 'User not found' });
-        }
 
-        res.status(200).json({ message: 'User updated successfully' });
+        User.getById(req.params.id, (err, rows) => {
+            if (err) return res.status(500).json({ message: 'DB error' });
+
+            res.status(200).json({
+                message: 'User updated successfully',
+                data: rows[0]
+            });
+        });
     });
 };
-
 
 /* ===================== ADMIN: DELETE USER ===================== */
 const deleteUser = (req, res) => {
     User.delete(req.params.id, (err, result) => {
-        if (err) return res.status(500).json({ message: 'Delete failed', error: err.message });
+        if (err)
+            return res.status(500).json({ message: 'Delete failed', error: err.message });
 
-        // Check if a row was actually deleted
-        if (!result.affectedRows) {
+        if (!result.affectedRows)
             return res.status(404).json({ message: 'User not found' });
-        }
 
         res.status(200).json({ message: 'User deleted successfully' });
     });
@@ -140,17 +179,21 @@ const deleteUser = (req, res) => {
 const getAllAdmins = (req, res) => {
     Admin.getAll((err, rows) => {
         if (err) return res.status(500).json({ message: 'DB error' });
-        res.json(rows);
+
+        res.json({
+            total_records: rows.length,
+            data: rows
+        });
     });
 };
 
 const deleteAdmin = (req, res) => {
     Admin.delete(req.params.id, (err, result) => {
-        if (err) return res.status(500).json({ message: 'Delete failed', error: err.message });
+        if (err)
+            return res.status(500).json({ message: 'Delete failed', error: err.message });
 
-        if (!result.affectedRows) {
+        if (!result.affectedRows)
             return res.status(404).json({ message: 'Admin not found' });
-        }
 
         res.status(200).json({ message: 'Admin deleted successfully' });
     });
