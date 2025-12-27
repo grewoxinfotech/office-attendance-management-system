@@ -1,0 +1,35 @@
+attendance-system/
+│
+├── backend/
+│   ├── src/
+│   │   ├── config/
+│   │   │   └── db.js
+│   │   ├── controllers/
+│   │   │   ├── auth.controller.js
+│   │   │   ├── attendance.controller.js
+│   │   ├── middleware/
+│   │   │   └── auth.middleware.js
+│   │   ├── models/
+│   │   │   ├── user.model.js
+│   │   │   ├── attendance.model.js
+│   │   ├── routes/
+│   │   │   ├── auth.routes.js
+│   │   │   ├── attendance.routes.js
+│   │   ├── utils/
+│   │   │   └── time.util.js
+│   │   └── app.js
+│   ├── .env
+│   └── server.js
+│
+└── flutter_app/
+    ├── lib/
+    │   ├── main.dart
+    │   ├── screens/
+    │   │   ├── login_screen.dart
+    │   │   ├── dashboard_screen.dart
+    │   │   └── attendance_screen.dart
+    │   ├── services/
+    │   │   └── api_service.dart
+    │   └── utils/
+    │       └── constants.dart
+    └── pubspec.yaml
