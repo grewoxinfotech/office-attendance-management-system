@@ -14,10 +14,19 @@ app.use(express.json());
 const attendanceRoutes = require('./src/routes/attendance.routes');
 const authRoutes = require('./src/routes/auth.routes');
 const userRoutes = require('./src/routes/user.routes');
+const shiftRoutes = require('./src/routes/shift.routes');    
+const payrollRoutes = require('./src/routes/payroll.routes');    
+const holidayRoutes = require('./src/routes/holiday.routes');
+let leaveRoutes = require('./src/routes/leave.routes');
+
 
 // Mount routes
 app.use('/api/auth', authRoutes);        // Login / registration
 app.use('/api/attendance', attendanceRoutes);  // Attendance
+app.use('/api/shifts', shiftRoutes);   // Shift management
+app.use('/api/payroll', payrollRoutes);   // Payroll management
+app.use('/api/holidays', holidayRoutes);  // Holiday management
+app.use('/api/leaves', leaveRoutes);      // Leave management
 app.use('/api', userRoutes);             // User / Admin management
 
 // ================= Health Check =================
